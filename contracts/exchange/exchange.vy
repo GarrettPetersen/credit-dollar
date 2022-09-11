@@ -1,0 +1,1 @@
+# Exchange that allows 1:1 trading of CUSD and another stablecoin

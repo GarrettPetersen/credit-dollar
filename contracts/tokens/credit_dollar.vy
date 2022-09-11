@@ -1,0 +1,1 @@
+# ERC20 for credit dollar (CUSD)
