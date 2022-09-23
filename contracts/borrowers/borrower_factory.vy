@@ -1,1 +1,0 @@
-# Generates borrower NFTs, which record users' loan status and credit limits
