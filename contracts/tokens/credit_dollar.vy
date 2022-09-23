@@ -42,6 +42,11 @@ def __init__():
     self.minter = self.founder
     self.balances[self.founder] = self.totalSupply
 
+@view
+@external
+def decimals() -> uint256:
+    return 18
+
 @internal
 def _transferCoins(_src: address, _dst: address, _amount: uint256):
 	assert _src != empty(address), "PLW::_transferCoins: cannot transfer from the zero address"
