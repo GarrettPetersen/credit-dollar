@@ -63,6 +63,12 @@ def _transferCoins(_src: address, _dst: address, _amount: uint256):
 	self.balances[_src] -= _amount
 	self.balances[_dst] += _amount
 
+@internal
+def _burn(_src: address, _amount: uint256):
+    assert _src != empty(address), "CUSD::_burn: cannot burn from the zero address"
+    self.balances[_src] -= _amount
+    self.totalSupply -= _amount
+
 @external
 def transfer(_to: address, _value: uint256) -> bool:
 	assert self.balances[msg.sender] >= _value, "CUSD::transfer: Not enough coins"
@@ -78,6 +84,22 @@ def transferFrom(_from: address, _to: address, _value: uint256) -> bool:
 	self.allowances[_from][msg.sender] -= _value
 	log Transfer(_from, _to, _value)
 	return True
+
+@external
+def burn(_value: uint256) -> bool:
+    assert self.balances[msg.sender] >= _value, "CUSD::burn: Not enough coins"
+    self._burn(msg.sender, _value)
+    log Transfer(msg.sender, empty(address), _value)
+    return True
+
+@external
+def burnFrom(_from: address, _value: uint256) -> bool:
+    allowance: uint256 = self.allowances[_from][msg.sender]
+    assert self.balances[_from] >= _value and allowance >= _value, "CUSD::burnFrom: Not enough coins"
+    self._burn(_from, _value)
+    self.allowances[_from][msg.sender] -= _value
+    log Transfer(_from, empty(address), _value)
+    return True
 
 @view
 @external
@@ -125,7 +147,7 @@ def setMinter(_account: address) -> bool:
     return True
 
 @external
-def flashMint(_amount: uint256) -> bool:
+def flashMint(_amount: uint256) -> int256:
     assert _amount > 0, "CUSD::flashMint: amount must be greater than 0"
     old_profit: int128 = self.flashmintProfit
     interest: uint256 = _amount * self.interestFactor / 10000
@@ -135,22 +157,47 @@ def flashMint(_amount: uint256) -> bool:
     # user must repay the flash loan plus interest
     assert self.flashmintProfit == old_profit + interest, "CUSD::flashMint: must repay flash loan plus interest"
     log Flash(msg.sender, _amount, interest)
-    return True
+    return interest
 
-# burn tokens to increase flashmint profit
+@external
+def flashMintTo(_amount: uint256,_account:address) -> uint256:
+    assert _amount > 0, "CUSD::flashMint: amount must be greater than 0"
+    old_profit: int128 = self.flashmintProfit
+    interest: uint256 = _amount * self.interestFactor / 10000
+    self.flashmintProfit -= _amount
+    self.balances[_account] += _amount # does not affect totalSupply
+
+    # user must repay the flash loan plus interest
+    assert self.flashmintProfit == old_profit + interest, "CUSD::flashMint: must repay flash loan plus interest"
+    log Flash(msg.sender, _amount, interest)
+    return interest
+
 @external
 def repayFlash(_amount: uint256) -> bool:
     assert _amount > 0, "CUSD::repayFlash: amount must be greater than 0"
     assert self.balances[msg.sender] >= _amount, "CUSD::repayFlash: Not enough coins"
-    self.balances[msg.sender] -= _amount
+    self._transferCoins(msg.sender, self, _amount)
+    self.flashmintProfit += _amount
+    return True
+
+@external
+def repayFlashFrom(_amount: uint256, _account: address) -> bool:
+    assert _amount > 0, "CUSD::repayFlash: amount must be greater than 0"
+    assert (
+        self.balances[_account] >= _amount
+        and self.allowances[_account][msg.sender] >= _amount
+    ), "CUSD::repayFlash: Not enough coins"
+    self._transferCoins(_account, self, _amount)
     self.flashmintProfit += _amount
     return True
 
 @external
 def takeProfits() -> bool:
     assert self.flashmintProfit > 0, "CUSD::takeProfits: no profits to take"
-    profit: uint256 = self.flashmintProfit
+    profit: uint256 = self.flashmintProfit / 2
     self.flashmintProfit = 0
-    self.balances[self.founder] += profit
+    self._transferCoins(self, self.founder, profit) # transfer half to founder
+    self._burn(self, profit) # burn the other half
     log Transfer(self, self.founder, profit)
+    log Transfer(self, empty(address), profit)
     return True
