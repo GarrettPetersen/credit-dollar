@@ -13,6 +13,7 @@ from vyper.interfaces import ERC20
 implements: ERC20
 
 INIT_SUPPLY: constant(unit256) = 10000000000000000000000000
+INTEREST_FACTOR: constant(uint256) = 8 # 8 / 10000 = 0.08%
 
 founder: address
 minter: address
@@ -22,6 +23,8 @@ name: public(string[13])
 symbol: public(string[4])
 balances: Hashmap[address, uint256]
 allowances: Hashmap[address, Hashmap[address, uint256]]
+interestFactor: public(uint256)
+flashmintProfit: int128
 
 event Transfer:
     sender: indexed(address)
@@ -33,11 +36,18 @@ event Approval:
     receiver: indexed(address)
     amount: uint256
 
+event Flash:
+    borrower: indexed(address)
+    amount: uint256
+    interest: uint256
+
 @external
 def __init__():
     self.totalSupply = INIT_SUPPLY
     self.name = "Credit Dollar"
     self.symbol = "CUSD"
+    self.interestFactor = INTEREST_FACTOR
+    self.flashmintProfit = 0
     self.founder = msg.sender
     self.minter = self.founder
     self.balances[self.founder] = self.totalSupply
@@ -113,4 +123,35 @@ def setMinter(_account: address) -> bool:
     assert msg.sender == self.founder
     assert self.founder == self.minter # can only be called once
     self.minter = _account
+    return True
+
+@external
+def flashMint(_amount: uint256) -> bool:
+    assert _amount > 0
+    old_profit: int128 = self.flashmintProfit
+    interest: uint256 = _amount * self.interestFactor / 10000
+    self.flashmintProfit -= _amount
+    self.balances[msg.sender] += _amount # does not affect totalSupply
+
+    # user must repay the flash loan plus interest
+    assert self.flashmintProfit == old_profit + interest
+    log Flash(msg.sender, _amount, interest)
+    return True
+
+# burn tokens to increase flashmint profit
+@external
+def repayFlash(_amount: uint256) -> bool:
+    assert _amount > 0
+    assert self.balances[msg.sender] >= _amount
+    self.balances[msg.sender] -= _amount
+    self.flashmintProfit += _amount
+    return True
+
+@external
+def takeProfits() -> bool:
+    assert self.flashmintProfit > 0
+    profit: uint256 = self.flashmintProfit
+    self.flashmintProfit = 0
+    self.balances[self.founder] += profit
+    self.totalSupply += profit
     return True
