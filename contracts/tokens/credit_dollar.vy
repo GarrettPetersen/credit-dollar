@@ -152,4 +152,5 @@ def takeProfits() -> bool:
     profit: uint256 = self.flashmintProfit
     self.flashmintProfit = 0
     self.balances[self.founder] += profit
+    log Transfer(self, self.founder, profit)
     return True
