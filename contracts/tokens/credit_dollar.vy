@@ -153,8 +153,7 @@ def flashMint(_amount: uint256) -> int256:
     interest: uint256 = _amount * self.interestFactor / 10000
     self.flashmintProfit -= _amount
     self.balances[msg.sender] += _amount # does not affect totalSupply
-
-    # user must repay the flash loan plus interest
+    # user can do anything here, so long as they repay the loan with interest
     assert self.flashmintProfit == old_profit + interest, "CUSD::flashMint: must repay flash loan plus interest"
     log Flash(msg.sender, _amount, interest)
     return interest
@@ -169,7 +168,7 @@ def flashMintTo(_amount: uint256,_account:address) -> uint256:
 
     # user must repay the flash loan plus interest
     assert self.flashmintProfit == old_profit + interest, "CUSD::flashMint: must repay flash loan plus interest"
-    log Flash(msg.sender, _amount, interest)
+    log Flash(_account, _amount, interest)
     return interest
 
 @external
