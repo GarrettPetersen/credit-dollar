@@ -164,9 +164,9 @@ def flashMintTo(_amount: uint256,_account:address) -> uint256:
     old_profit: int128 = self.flashmintProfit
     interest: uint256 = _amount * self.interestFactor / 10000
     self.flashmintProfit -= _amount
-    self.balances[_account] += _amount # does not affect totalSupply
-
-    # user must repay the flash loan plus interest
+    self.balances[_account] += _amount
+    totalSupply += _amount
+    # user can do anything here, so long as they repay the loan with interest
     assert self.flashmintProfit == old_profit + interest, "CUSD::flashMint: must repay flash loan plus interest"
     log Flash(_account, _amount, interest)
     return interest
@@ -193,10 +193,11 @@ def repayFlashFrom(_amount: uint256, _account: address) -> bool:
 @external
 def takeProfits() -> bool:
     assert self.flashmintProfit > 0, "CUSD::takeProfits: no profits to take"
-    profit: uint256 = self.flashmintProfit / 2
+    half_profit: uint256 = self.flashmintProfit / 2
     self.flashmintProfit = 0
-    self._transferCoins(self, self.founder, profit) # transfer half to founder
-    self._burn(self, profit) # burn the other half
-    log Transfer(self, self.founder, profit)
-    log Transfer(self, empty(address), profit)
+    self._transferCoins(self, self.founder, half_profit) # transfer half to founder
+    amount_to_burn: uint256 = self.balances[self]
+    self._burn(self, amount_to_burn) # burn the rest
+    log Transfer(self, self.founder, half_profit)
+    log Transfer(self, empty(address), amount_to_burn)
     return True
