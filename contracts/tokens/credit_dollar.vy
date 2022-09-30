@@ -186,6 +186,7 @@ def repayFlashFrom(_amount: uint256, _account: address) -> bool:
         self.balances[_account] >= _amount
         and self.allowances[_account][msg.sender] >= _amount
     ), "CUSD::repayFlash: Not enough coins"
+    self.allowances[_account][msg.sender] -= _amount
     self._transferCoins(_account, self, _amount)
     self.flashmintProfit += _amount
     return True
