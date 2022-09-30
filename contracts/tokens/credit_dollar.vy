@@ -58,14 +58,14 @@ def decimals() -> uint256:
 
 @internal
 def _transferCoins(_src: address, _dst: address, _amount: uint256):
-	assert _src != empty(address), "PLW::_transferCoins: cannot transfer from the zero address"
-	assert _dst != empty(address), "PLW::_transfersCoins: cannot transfer to the zero address"
+	assert _src != empty(address), "CUSD::_transferCoins: cannot transfer from the zero address"
+	assert _dst != empty(address), "CUSD::_transfersCoins: cannot transfer to the zero address"
 	self.balances[_src] -= _amount
 	self.balances[_dst] += _amount
 
 @external
 def transfer(_to: address, _value: uint256) -> bool:
-	assert self.balances[msg.sender] >= _value, "PLW::transfer: Not enough coins"
+	assert self.balances[msg.sender] >= _value, "CUSD::transfer: Not enough coins"
 	self._transferCoins(msg.sender, _to, _value)
 	log Transfer(msg.sender, _to, _value)
 	return True
@@ -73,7 +73,7 @@ def transfer(_to: address, _value: uint256) -> bool:
 @external
 def transferFrom(_from: address, _to: address, _value: uint256) -> bool:
 	allowance: uint256 = self.allowances[_from][msg.sender]
-	assert self.balances[_from] >= _value and allowance >= _value
+	assert self.balances[_from] >= _value and allowance >= _value, "CUSD::transferFrom: Not enough coins"
 	self._transferCoins(_from, _to, _value)
 	self.allowances[_from][msg.sender] -= _value
 	log Transfer(_from, _to, _value)
@@ -111,7 +111,7 @@ def decreaseAllowance(spender: address, _value: uint256) -> bool:
 
 @external
 def mint(_account: address, _value: uint256) -> bool:
-    assert msg.sender == self.minter
+    assert msg.sender == self.minter, "CUSD::mint: only minter can mint"
 	self.totalSupply += _value
 	self.balances[_account] += _value
 	log Transfer(empty(address), _account, _value)
@@ -119,14 +119,14 @@ def mint(_account: address, _value: uint256) -> bool:
 
 @external
 def setMinter(_account: address) -> bool:
-    assert msg.sender == self.founder
-    assert self.founder == self.minter # can only be called once
-    self.minter = _account
+    assert msg.sender == self.founder, "CUSD::setMinter: only founder can set minter"
+    assert self.founder == self.minter, "CUSD::setMinter: minter already set"
+    self.minter = _account # intended to set minting to the issuer contract
     return True
 
 @external
 def flashMint(_amount: uint256) -> bool:
-    assert _amount > 0
+    assert _amount > 0, "CUSD::flashMint: amount must be greater than 0"
     old_profit: int128 = self.flashmintProfit
     interest: uint256 = _amount * self.interestFactor / 10000
     self.flashmintProfit -= _amount
@@ -140,17 +140,16 @@ def flashMint(_amount: uint256) -> bool:
 # burn tokens to increase flashmint profit
 @external
 def repayFlash(_amount: uint256) -> bool:
-    assert _amount > 0
-    assert self.balances[msg.sender] >= _amount
+    assert _amount > 0, "CUSD::repayFlash: amount must be greater than 0"
+    assert self.balances[msg.sender] >= _amount, "CUSD::repayFlash: Not enough coins"
     self.balances[msg.sender] -= _amount
     self.flashmintProfit += _amount
     return True
 
 @external
 def takeProfits() -> bool:
-    assert self.flashmintProfit > 0
+    assert self.flashmintProfit > 0, "CUSD::takeProfits: no profits to take"
     profit: uint256 = self.flashmintProfit
     self.flashmintProfit = 0
     self.balances[self.founder] += profit
-    self.totalSupply += profit
     return True
