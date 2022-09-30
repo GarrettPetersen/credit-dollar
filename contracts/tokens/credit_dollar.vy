@@ -157,7 +157,7 @@ def flashMint(_amount: uint256) -> int256:
     old_profit: int128 = self.flashmintProfit
     interest: uint256 = _amount * self.interestFactor / 10000
     self.flashmintProfit -= _amount
-    self._mint(msg.sender, _amount + interest)
+    self._mint(msg.sender, _amount)
     # user can do anything here, so long as they repay the loan with interest
     self._transferCoins(msg.sender, self, _amount + interest)
     self.flashmintProfit += _amount + interest
