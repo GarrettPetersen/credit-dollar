@@ -47,10 +47,14 @@ struct exchange:
     lastBlockTimestamp: uint32
     lastSecondsPerLiquidityCumulativeX128: uint160
 
+exchanges: exchange[6]
 
 @external
-def __init__(_cusd_address: address, _exchange_addresses: address[7]):
+def __init__(_cusd_address: address, _exchange_addresses: address[6]):
     self.founder = msg.sender
+    self.cusdAddress = _cusd_address
+    for i in range(6):
+        self.exchanges[i].exchangeAddress = _exchange_addresses[i]
     
 
 
