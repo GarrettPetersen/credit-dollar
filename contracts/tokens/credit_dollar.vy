@@ -69,6 +69,12 @@ def _burn(_src: address, _amount: uint256):
     self.balances[_src] -= _amount
     self.totalSupply -= _amount
 
+@internal
+def _mint(_dst: address, _amount: uint256):
+    assert _dst != empty(address), "CUSD::_mint: cannot mint to the zero address"
+    self.balances[_dst] += _amount
+    self.totalSupply += _amount
+
 @external
 def transfer(_to: address, _value: uint256) -> bool:
 	assert self.balances[msg.sender] >= _value, "CUSD::transfer: Not enough coins"
@@ -134,8 +140,7 @@ def decreaseAllowance(spender: address, _value: uint256) -> bool:
 @external
 def mint(_account: address, _value: uint256) -> bool:
     assert msg.sender == self.minter, "CUSD::mint: only minter can mint"
-	self.totalSupply += _value
-	self.balances[_account] += _value
+	self._mint(_account, _value)
 	log Transfer(empty(address), _account, _value)
 	return True
 
@@ -152,46 +157,13 @@ def flashMint(_amount: uint256) -> int256:
     old_profit: int128 = self.flashmintProfit
     interest: uint256 = _amount * self.interestFactor / 10000
     self.flashmintProfit -= _amount
-    self.balances[msg.sender] += _amount # does not affect totalSupply
+    self._mint(msg.sender, _amount + interest)
     # user can do anything here, so long as they repay the loan with interest
-    assert self.flashmintProfit == old_profit + interest, "CUSD::flashMint: must repay flash loan plus interest"
+    self._transferCoins(msg.sender, self, _amount + interest)
+    self.flashmintProfit += _amount + interest
+    assert self.flashmintProfit == old_profit + interest, "CUSD::flashMint: wrong interest"
     log Flash(msg.sender, _amount, interest)
     return interest
-
-@external
-def flashMintTo(_amount: uint256,_account:address) -> uint256:
-    assert _amount > 0, "CUSD::flashMint: amount must be greater than 0"
-    old_profit: int128 = self.flashmintProfit
-    interest: uint256 = _amount * self.interestFactor / 10000
-    self.flashmintProfit -= _amount
-    self.balances[_account] += _amount
-    totalSupply += _amount
-    # user can do anything here, so long as they repay the loan with interest
-    assert self.flashmintProfit == old_profit + interest, "CUSD::flashMint: must repay flash loan plus interest"
-    log Flash(_account, _amount, interest)
-    return interest
-
-@external
-def repayFlash(_amount: uint256) -> bool:
-    assert _amount > 0, "CUSD::repayFlash: amount must be greater than 0"
-    assert self.balances[msg.sender] >= _amount, "CUSD::repayFlash: Not enough coins"
-    self._transferCoins(msg.sender, self, _amount)
-    self.flashmintProfit += _amount
-    log Transfer(msg.sender, self, _amount)
-    return True
-
-@external
-def repayFlashFrom(_amount: uint256, _account: address) -> bool:
-    assert _amount > 0, "CUSD::repayFlash: amount must be greater than 0"
-    assert (
-        self.balances[_account] >= _amount
-        and self.allowances[_account][msg.sender] >= _amount
-    ), "CUSD::repayFlash: Not enough coins"
-    self.allowances[_account][msg.sender] -= _amount
-    self._transferCoins(_account, self, _amount)
-    self.flashmintProfit += _amount
-    log Transfer(_account, self, _amount)
-    return True
 
 @external
 def takeProfits() -> bool:
