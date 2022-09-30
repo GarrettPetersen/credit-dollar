@@ -133,7 +133,7 @@ def flashMint(_amount: uint256) -> bool:
     self.balances[msg.sender] += _amount # does not affect totalSupply
 
     # user must repay the flash loan plus interest
-    assert self.flashmintProfit == old_profit + interest
+    assert self.flashmintProfit == old_profit + interest, "CUSD::flashMint: must repay flash loan plus interest"
     log Flash(msg.sender, _amount, interest)
     return True
 
