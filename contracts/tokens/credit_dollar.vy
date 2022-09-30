@@ -1,11 +1,10 @@
-# ERC20 for credit dollar (CUSD)
 """
+ERC20 for credit dollar (CUSD)
 This contract contains:
 - Standard ERC20 functions
-- Flashmint, with revenues split equally between burn, LP, and contract owner
+- Flashmint, with profits going to founder
 - One-time pre-mint to founder
-- Prevents minting below a certain token price to maintain peg (need uniswap interface for this? or get from issuer?)
-- allows minting only if the issuer has available credit at the given level
+- only allows the minter (issuer contract) to mint
 """
 
 from vyper.interfaces import ERC20
