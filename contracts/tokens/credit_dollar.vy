@@ -50,6 +50,7 @@ def __init__():
     self.founder = msg.sender
     self.minter = self.founder
     self.balances[self.founder] = self.totalSupply
+    log Transfer(empty(address), self.founder, self.totalSupply)
 
 @view
 @external
