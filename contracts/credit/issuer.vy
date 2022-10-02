@@ -28,11 +28,7 @@ Info tied to a given ERC721:
 
 """
 Uniswap v3 oracle
-
-change in sqrt price needed to reach 1:1 = (x-1)/20000
-where x is the change in the price accumulator
-
-Above function uses a linear approximation of 1.0001**(x/2)
+- Tracks the price of CUSD
 
 Uniswap pools to start before deploying this contract (decimals):
 USDT (6), USDC (6), BUSD (18), DAI (18), FRAX (18), BEAN (6), LUSD (18)
@@ -42,6 +38,8 @@ from vyper.interfaces import ERC20
 
 founder: address
 cusdAddress: address
+cusd: ERC20
+
 
 struct exchange:
     exchangeAddress: address
@@ -61,20 +59,31 @@ interface UniswapV3Pool:
 def __init__(_cusd_address: address, _exchange_addresses: address[6]):
     self.founder = msg.sender
     self.cusdAddress = _cusd_address
+    self.cusd = ERC20(_cusd_address)
     for i in range(6):
         self.exchanges[i].exchangeAddress = _exchange_addresses[i]
     
 
 
 @internal
-def _get_uniswap_token_imbalance(_exchange: exchange) -> int128:
-    pool: UniswapV3Pool = UniswapV3Pool(_exchange.exchangeAddress)
+def _get_uniswap_token_imbalance(i: uint256) -> int128:
+    pool: UniswapV3Pool = UniswapV3Pool(exchanges[i].exchangeAddress)
     token0: address = pool.token0()
     token1: address = pool.token1()
     token0_decimals: uint256 = ERC20(token0).decimals()
     token1_decimals: uint256 = ERC20(token1).decimals()
     (blockTimestamp, tickCumulative, secondsPerLiquidityCumulativeX128) = pool.observe([0])
-    timeElapsed: uint32 = blockTimestamp - _exchange.lastBlockTimestamp
-    tickCumulativeDelta: int56 = tickCumulative - _exchange.lastTickCumulative
-    secondsPerLiquidityCumulativeX128Delta: uint160 = secondsPerLiquidityCumulativeX128 - _exchange.lastSecondsPerLiquidityCumulativeX128
-    target_price: uint256 = 10 ** (token0_decimals - token1_decimals)
+    timeElapsed: uint32 = (blockTimestamp - exchanges[i].lastBlockTimestamp) % 2**32
+    exchanges[i].lastBlockTimestamp = blockTimestamp
+    tickCumulativeDelta: int56 = tickCumulative - exchanges[i].lastTickCumulative
+    exchanges[i].lastTickCumulative = tickCumulative
+    secondsPerLiquidityCumulativeX128Delta: uint160 = secondsPerLiquidityCumulativeX128 - exchanges[i].lastSecondsPerLiquidityCumulativeX128
+    exchanges[i].lastSecondsPerLiquidityCumulativeX128 = secondsPerLiquidityCumulativeX128
+    target_price_exponent: uint256 = 18 + token0_decimals - token1_decimals
+    avg_tick: uint256 = 10**18 * uint256(tickCumulativeDelta) / timeElapsed
+    avg_reciprocal_liquidity: uint256 = 10**18 * uint256(secondsPerLiquidityCumulativeX128Delta) / timeElapsed
+    avg_sqrt_price_difference_from_target: int128 = (10**18 * 1.0001 ** (avg_tick / (2*10**18)) - 10**target_price_exponent)
+    if token1 == self.cusdAddress:
+        return avg_sqrt_price_difference_from_target / avg_reciprocal_liquidity
+    else:
+        return 10**36 / (avg_sqrt_price_difference_from_target * avg_reciprocal_liquidity)
