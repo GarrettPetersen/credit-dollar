@@ -38,6 +38,8 @@ Uniswap pools to start before deploying this contract (decimals):
 USDT (6), USDC (6), BUSD (18), DAI (18), FRAX (18), BEAN (6), LUSD (18)
 """
 
+from vyper.interfaces import ERC20
+
 founder: address
 cusdAddress: address
 
@@ -49,6 +51,12 @@ struct exchange:
 
 exchanges: exchange[6]
 
+interface UniswapV3Pool:
+    def token0() -> address: view
+    def token1() -> address: view
+    # [secondsAgo] -> [blockTimestamp, tickCumulative, secondsPerLiquidityCumulativeX128]
+    def observe([uint32]) -> (uint32, int56, uint160): view
+
 @external
 def __init__(_cusd_address: address, _exchange_addresses: address[6]):
     self.founder = msg.sender
@@ -59,6 +67,14 @@ def __init__(_cusd_address: address, _exchange_addresses: address[6]):
 
 
 @internal
-def get_uniswap_token_imbalance(_exchange_address: address) -> int128:
-
-
+def _get_uniswap_token_imbalance(_exchange: exchange) -> int128:
+    pool: UniswapV3Pool = UniswapV3Pool(_exchange.exchangeAddress)
+    token0: address = pool.token0()
+    token1: address = pool.token1()
+    token0_decimals: uint256 = ERC20(token0).decimals()
+    token1_decimals: uint256 = ERC20(token1).decimals()
+    (blockTimestamp, tickCumulative, secondsPerLiquidityCumulativeX128) = pool.observe([0])
+    timeElapsed: uint32 = blockTimestamp - _exchange.lastBlockTimestamp
+    tickCumulativeDelta: int56 = tickCumulative - _exchange.lastTickCumulative
+    secondsPerLiquidityCumulativeX128Delta: uint160 = secondsPerLiquidityCumulativeX128 - _exchange.lastSecondsPerLiquidityCumulativeX128
+    target_price: uint256 = 10 ** (token0_decimals - token1_decimals)
