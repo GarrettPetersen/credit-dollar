@@ -79,11 +79,11 @@ def _get_uniswap_token_imbalance(i: uint256) -> int128:
     exchanges[i].lastTickCumulative = tickCumulative
     secondsPerLiquidityCumulativeX128Delta: uint160 = secondsPerLiquidityCumulativeX128 - exchanges[i].lastSecondsPerLiquidityCumulativeX128
     exchanges[i].lastSecondsPerLiquidityCumulativeX128 = secondsPerLiquidityCumulativeX128
-    target_price_exponent: uint256 = 18 + token0_decimals - token1_decimals
-    avg_tick: uint256 = 10**18 * uint256(tickCumulativeDelta) / timeElapsed
-    avg_reciprocal_liquidity: uint256 = 10**18 * uint256(secondsPerLiquidityCumulativeX128Delta) / timeElapsed
-    avg_sqrt_price_difference_from_target: int128 = (10**18 * 1.0001 ** (avg_tick / (2*10**18)) - 10**target_price_exponent)
+    target_price_exponent: uint256 = token0_decimals - token1_decimals
+    avg_tick: decimal = uint256(tickCumulativeDelta) / timeElapsed
+    avg_reciprocal_liquidity: decimal = uint256(secondsPerLiquidityCumulativeX128Delta) / timeElapsed
+    avg_sqrt_price_difference_from_target: decimal = (1.0001 ** (avg_tick / 2) - 10**target_price_exponent)
     if token1 == self.cusdAddress:
-        return avg_sqrt_price_difference_from_target / avg_reciprocal_liquidity
+        return int128(avg_sqrt_price_difference_from_target / avg_reciprocal_liquidity)
     else:
-        return 10**36 / (avg_sqrt_price_difference_from_target * avg_reciprocal_liquidity)
+        return int128(1 / (avg_sqrt_price_difference_from_target * avg_reciprocal_liquidity))
