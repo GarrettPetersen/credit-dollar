@@ -44,6 +44,7 @@ creditBuffer: int128
 lastUpdate: uint256
 maxLevel: uint256
 nextLevel: uint256
+MONTH_IN_SECONDS: constant(uint256) = 2592000
 
 enum status:
     READY
@@ -202,14 +203,14 @@ def _update_borrow_status(_nft: address, _nft_id: uint256) -> bool:
     if current_status == READY or current_status == DELINQUENT:
         return True
     time_since_last_update: uint256 = block.timestamp - self.linesOfCredit[_nft][_nft_id].lastEvent
-    if time_since_last_update <= 2592000:
+    if time_since_last_update <= MONTH_IN_SECONDS:
         return True
-    elif time_since_last_update > 5184000:
+    elif time_since_last_update > MONTH_IN_SECONDS*2:
         self.linesOfCredit[_nft][_nft_id].status = DELINQUENT
         return True
     elif current_status == BORROWING:
         self.linesOfCredit[_nft][_nft_id].status = OVERDUE
-        self.linesOfCredit[_nft][_nft_id].lastEvent += 2592000
+        self.linesOfCredit[_nft][_nft_id].lastEvent += MONTH_IN_SECONDS
         return True
     elif current_status == OVERDUE:
         self.linesOfCredit[_nft][_nft_id].status = DELINQUENT
