@@ -31,10 +31,11 @@ Uniswap v3 oracle
 - Tracks the price of CUSD
 
 Uniswap pools to start before deploying this contract (decimals):
-USDT (6), USDC (6), BUSD (18), DAI (18), FRAX (18), BEAN (6), LUSD (18)
+USDT (6), USDC (6), BUSD (18), DAI (18), FRAX (18), LUSD (18)
 """
 
 from vyper.interfaces import ERC20
+from vyper.interfaces import ERC721
 
 founder: address
 cusdAddress: address
@@ -46,7 +47,7 @@ nextLevel: uint256
 
 enum status:
     READY
-    GOOD
+    BORROWING
     OVERDUE
     DELINQUENT
 
@@ -60,7 +61,7 @@ struct lineOfCredit:
     owner: address
     payee: address
 
-linesofCredit: HashMap[address, lineOfCredit]
+linesOfCredit: HashMap[address, HashMap[uint256,lineOfCredit]]
 
 struct levelCredit:
     maxCredit: uint256
@@ -81,6 +82,37 @@ interface UniswapV3Pool:
     def token1() -> address: view
     # [secondsAgo] -> [blockTimestamp, tickCumulative, secondsPerLiquidityCumulativeX128]
     def observe([uint32]) -> (uint32, int56, uint160): view
+
+event NewLineOfCredit:
+    owner: address
+    nft: address
+    nft_id: uint256
+    multiplier: uint256
+    payee: address
+
+event Borrow:
+    owner: address
+    nft: address
+    nft_id: uint256
+    amount: uint256
+
+event Repay:
+    owner: address
+    nft: address
+    nft_id: uint256
+    amount: uint256
+    payee: address
+    payee_revenue: uint256
+
+event Liquidation:
+    old_owner: address
+    liquidator: address
+    nft: address
+    nft_id: uint256
+    amount: uint256
+    payee: address
+    payee_revenue: uint256
+
 
 @external
 def __init__(_cusd_address: address, _exchange_addresses: address[6]):
@@ -132,8 +164,8 @@ def _issue_credit() -> bool:
         return True
 
     for i in range(10):
-        credit_to_issue: uint256 = self.creditLevels[self.nextLevel].maxCredit - self.creditLevels[self.nextLevel].availableCredit
-        if credit_to_issue == 0:
+        credit_to_issue: int128 = self.creditLevels[self.nextLevel].maxCredit - self.creditLevels[self.nextLevel].availableCredit
+        if credit_to_issue <= 0:
             self.nextLevel -= 1
             if self.nextLevel == 0:
                 self.nextLevel = self.maxLevel
@@ -163,3 +195,67 @@ def _switchboard():
         self.creditBuffer += self._get_uniswap_token_imbalance(magic_number)
     else:
         self._issue_credit()
+
+@internal
+def _update_borrow_status(_nft: address, _nft_id: uint256) -> bool:
+    current_status: status = self.linesOfCredit[_nft][_nft_id].status
+    if current_status == READY or current_status == DELINQUENT:
+        return True
+    time_since_last_update: uint256 = block.timestamp - self.linesOfCredit[_nft][_nft_id].lastEvent
+    if time_since_last_update <= 2592000:
+        return True
+    elif time_since_last_update > 5184000:
+        self.linesOfCredit[_nft][_nft_id].status = DELINQUENT
+        return True
+    elif current_status == BORROWING:
+        self.linesOfCredit[_nft][_nft_id].status = OVERDUE
+        self.linesOfCredit[_nft][_nft_id].lastEvent += 2592000
+        return True
+    elif current_status == OVERDUE:
+        self.linesOfCredit[_nft][_nft_id].status = DELINQUENT
+        return True
+    else:
+        return False
+
+@external
+def approveNFT(_nft_address: address, _nft_id: uint256):
+    ERC721(_nft_address).approve(_nft_id, self)
+
+@external
+def approveCUSD(_amount: uint256):
+    self.cusd.approve(self, _amount)
+
+@external
+def openLineOfCredit(_nft_address: address, _nft_id: uint256, _multiplier: uint256, _payee: address) -> bool:
+    assert _multiplier in {100, 1000, 10000, 100000}
+    assert ERC721(_nft_address).ownerOf(_nft_id) == msg.sender
+    assert not self.linesOfCredit[_nft_address] or not self.linesOfCredit[_nft_address][_nft_id]
+    assert _payee != ZERO_ADDRESS and _payee != msg.sender
+    self.cusd.burnFrom(msg.sender, 5 * _multiplier * 10**18)
+    self.linesOfCredit[_nft_address][_nft_id] = {
+        creditLevel: 1,
+        multiplier: _multiplier,
+        status: status.READY,
+        lastEvent: block.timestamp,
+        outstandingDebt: 0,
+        outstandingPenalty: 0,
+        owner: msg.sender,
+        payee: msg.sender
+    }
+    log OpenLineOfCredit(msg.sender, _nft_address, _nft_id, _multiplier, _payee)
+    return True
+
+@external
+def borrow(_nft_address: address, _nft_id: uint256, _amount: uint256) -> bool:
+    assert self.linesOfCredit[_nft_address][_nft_id].status == status.READY
+    assert self.linesOfCredit[_nft_address][_nft_id].owner == msg.sender
+    self._switchboard()
+    assert self.creditLevels[credit_level].availableCredit >= _amount
+    assert _amount <= self._credit_limit(self.linesOfCredit[_nft_address][_nft_id].creditLevel, self.linesOfCredit[_nft_address][_nft_id].multiplier)
+    self.linesOfCredit[_nft_address][_nft_id].status = status.BORROWING
+    self.creditLevels[self.linesOfCredit[_nft_address][_nft_id].creditLevel].availableCredit -= _amount
+    self.linesOfCredit[_nft_address][_nft_id].outstandingDebt += _amount
+    self.linesOfCredit[_nft_address][_nft_id].lastEvent = block.timestamp
+    self.cusd.mint(msg.sender, _amount)
+    log Borrow(msg.sender, _nft_address, _nft_id, _amount)
+    return True
