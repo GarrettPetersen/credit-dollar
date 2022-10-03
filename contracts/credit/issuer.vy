@@ -39,7 +39,34 @@ from vyper.interfaces import ERC20
 founder: address
 cusdAddress: address
 cusd: ERC20
+creditBuffer: int128
+lastUpdate: uint256
+maxLevel: uint256
+nextLevel: uint256
 
+enum status:
+    READY
+    GOOD
+    OVERDUE
+    DELINQUENT
+
+struct lineOfCredit:
+    creditLevel: uint256
+    multiplier: uint256
+    status: status
+    lastEvent: uint256
+    outstandingDebt: uint256
+    outstandingPenalty: uint256
+    owner: address
+    payee: address
+
+linesofCredit: HashMap[address, lineOfCredit]
+
+struct levelCredit:
+    maxCredit: uint256
+    availableCredit: uint256
+
+creditLevels: HashMap[uint256, levelCredit]
 
 struct exchange:
     exchangeAddress: address
@@ -60,6 +87,11 @@ def __init__(_cusd_address: address, _exchange_addresses: address[6]):
     self.founder = msg.sender
     self.cusdAddress = _cusd_address
     self.cusd = ERC20(_cusd_address)
+    self.creditLevels[1] = {
+        maxCredit: 0,
+        availableCredit: 0
+    }
+
     for i in range(6):
         self.exchanges[i].exchangeAddress = _exchange_addresses[i]
     
@@ -87,3 +119,47 @@ def _get_uniswap_token_imbalance(i: uint256) -> int128:
         return int128(avg_sqrt_price_difference_from_target / avg_reciprocal_liquidity)
     else:
         return int128(1 / (avg_sqrt_price_difference_from_target * avg_reciprocal_liquidity))
+
+@internal
+def _credit_limit(_level: uint256, _multiplier: uint256) -> uint256:
+    # returns the triangle number of the level
+    return _multiplier * _level * (_level + 1) / 2
+
+@internal
+def _issue_credit() -> bool:
+    if self.creditBuffer <= 0:
+        self.creditBuffer = 0
+        return True
+
+    for i in range(10):
+        credit_to_issue: uint256 = self.creditLevels[self.nextLevel].maxCredit - self.creditLevels[self.nextLevel].availableCredit
+        if credit_to_issue == 0:
+            self.nextLevel -= 1
+            if self.nextLevel == 0:
+                self.nextLevel = self.maxLevel
+            continue
+        elif self.creditBuffer < credit_to_issue:
+            self.creditLevels[self.nextLevel].availableCredit += self.creditBuffer
+            self.creditBuffer = 0
+            return True
+        else:
+            self.creditLevels[self.nextLevel].availableCredit = self.creditLevels[self.nextLevel].maxCredit
+            self.creditBuffer -= credit_to_issue
+            self.nextLevel -= 1
+            if self.nextLevel == 0:
+                self.nextLevel = self.maxLevel
+
+@internal
+def _switchboard():
+    time_since_last_update: uint256 = block.timestamp - self.lastUpdate
+    if time_since_last_update <= 500:
+        return True
+    else:
+        self.lastUpdate = block.timestamp
+        self.cusd.mint(msg.sender, 10**19) # compensate for gas
+    
+    magic_number: int256 = block.timestamp / 500 % 7
+    if magic_number <= 5:
+        self.creditBuffer += self._get_uniswap_token_imbalance(magic_number)
+    else:
+        self._issue_credit()
