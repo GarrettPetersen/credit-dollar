@@ -45,6 +45,7 @@ lastUpdate: uint256
 maxLevel: uint256
 nextLevel: uint256
 MONTH_IN_SECONDS: constant(uint256) = 2592000
+DECIMAL_MULTIPLIER: constant(uint256) = 10**18
 
 enum status:
     READY
@@ -158,7 +159,7 @@ def _get_uniswap_token_imbalance(i: uint256) -> int128:
 @internal
 def _credit_limit(_level: uint256) -> uint256:
     # returns the triangle number of the level
-    return _level * (_level + 1) / 2
+    return DECIMAL_MULTIPLIER * 100 * _level * (_level + 1) / 2
 
 @internal
 def _issue_credit() -> bool:
@@ -202,16 +203,20 @@ def _switchboard():
 @internal
 def _update_borrow_status(_nft: address, _nft_id: uint256) -> bool:
     current_status: status = self.linesOfCredit[_nft][_nft_id].status
+    current_level: uint256 = self.linesOfCredit[_nft][_nft_id].level
     if current_status == READY or current_status == DELINQUENT:
         return True
     time_since_last_update: uint256 = block.timestamp - self.linesOfCredit[_nft][_nft_id].lastEvent
     if time_since_last_update <= MONTH_IN_SECONDS:
         return True
     elif time_since_last_update > MONTH_IN_SECONDS*2:
+        self.linesOfCredit[_nft][_nft_id].outstandingPenalty += current_level * DECIMAL_MULTIPLIER
+        if current_status == BORROWING:
+            self.linesOfCredit[_nft][_nft_id].outstandingPenalty += current_level * DECIMAL_MULTIPLIER
         self.linesOfCredit[_nft][_nft_id].status = DELINQUENT
         return True
     elif current_status == BORROWING:
-        self.linesOfCredit[_nft][_nft_id].penalty += self.linesOfCredit[_nft][_nft_id].
+        self.linesOfCredit[_nft][_nft_id].penalty += current_level * DECIMAL_MULTIPLIER
         self.linesOfCredit[_nft][_nft_id].status = OVERDUE
         self.linesOfCredit[_nft][_nft_id].lastEvent += MONTH_IN_SECONDS
         return True
@@ -230,13 +235,13 @@ def approveCUSD(_amount: uint256):
     self.cusd.approve(self, _amount)
 
 @external
-def openLineOfCredit(_nft_address: address, _nft_id: uint256, _payee: uint256) -> bool:
+def openLineOfCredit(_nft_address: address, _nft_id: uint256, _payee: uint256, _starting_level: uint256) -> bool:
     assert ERC721(_nft_address).ownerOf(_nft_id) == msg.sender
     assert not self.linesOfCredit[_nft_address] or not self.linesOfCredit[_nft_address][_nft_id]
     assert _payee < self.numPayees
-    self.cusd.burnFrom(msg.sender, 5 * 10**18)
+    self.cusd.burnFrom(msg.sender, 5 * self._credit_limit(_starting_level))
     self.linesOfCredit[_nft_address][_nft_id] = {
-        creditLevel: 1,
+        creditLevel: _starting_level,
         status: status.READY,
         lastEvent: block.timestamp,
         outstandingDebt: 0,
