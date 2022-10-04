@@ -192,7 +192,7 @@ def _switchboard():
         return True
     else:
         self.lastUpdate = block.timestamp
-        self.cusd.mint(msg.sender, 10**19) # compensate for gas
+        self.cusd.mint(msg.sender, 10 * DECIMAL_MULTIPLIER) # compensate for gas
     
     magic_number: int256 = block.timestamp / 500 % 7
     if magic_number <= 5:
@@ -239,6 +239,7 @@ def openLineOfCredit(_nft_address: address, _nft_id: uint256, _payee: uint256, _
     assert ERC721(_nft_address).ownerOf(_nft_id) == msg.sender
     assert not self.linesOfCredit[_nft_address] or not self.linesOfCredit[_nft_address][_nft_id]
     assert _payee < self.numPayees
+    self._switchboard()
     self.cusd.burnFrom(msg.sender, 5 * self._credit_limit(_starting_level))
     self.linesOfCredit[_nft_address][_nft_id] = {
         creditLevel: _starting_level,
@@ -256,9 +257,9 @@ def openLineOfCredit(_nft_address: address, _nft_id: uint256, _payee: uint256, _
 def borrow(_nft_address: address, _nft_id: uint256, _amount: uint256) -> bool:
     assert self.linesOfCredit[_nft_address][_nft_id].status == status.READY
     assert self.linesOfCredit[_nft_address][_nft_id].owner == msg.sender
-    self._switchboard()
     assert self.creditLevels[credit_level].availableCredit >= _amount
     assert _amount <= self._credit_limit(self.linesOfCredit[_nft_address][_nft_id].creditLevel)
+    self._switchboard()
     self.linesOfCredit[_nft_address][_nft_id].status = status.BORROWING
     self.creditLevels[self.linesOfCredit[_nft_address][_nft_id].creditLevel].availableCredit -= _amount
     self.linesOfCredit[_nft_address][_nft_id].outstandingDebt += _amount
@@ -266,3 +267,11 @@ def borrow(_nft_address: address, _nft_id: uint256, _amount: uint256) -> bool:
     self.cusd.mint(msg.sender, _amount)
     log Borrow(msg.sender, _nft_address, _nft_id, _amount)
     return True
+
+@external
+def registerNewPayee(_payee: address) -> uint256:
+    new_payee_id: uint256 = self.numPayees
+    self.cusd.burnFrom(msg.sender, 100 * DECIMAL_MULTIPLIER)
+    self.numPayees += 1
+    self.payees[new_payee_id] = _payee
+    return new_payee_id
