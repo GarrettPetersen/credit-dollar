@@ -54,13 +54,12 @@ enum status:
 
 struct lineOfCredit:
     creditLevel: uint256
-    multiplier: uint256
     status: status
     lastEvent: uint256
     outstandingDebt: uint256
     outstandingPenalty: uint256
     owner: address
-    payee: address
+    payee: uint256
 
 linesOfCredit: HashMap[address, HashMap[uint256,lineOfCredit]]
 
@@ -69,6 +68,8 @@ struct levelCredit:
     availableCredit: uint256
 
 creditLevels: HashMap[uint256, levelCredit]
+payees: HashMap[uint256, address]
+numPayees: uint256
 
 struct exchange:
     exchangeAddress: address
@@ -88,8 +89,7 @@ event NewLineOfCredit:
     owner: address
     nft: address
     nft_id: uint256
-    multiplier: uint256
-    payee: address
+    payee: uint256
 
 event Borrow:
     owner: address
@@ -102,7 +102,7 @@ event Repay:
     nft: address
     nft_id: uint256
     amount: uint256
-    payee: address
+    payee: uint256
     payee_revenue: uint256
 
 event Liquidation:
@@ -111,7 +111,7 @@ event Liquidation:
     nft: address
     nft_id: uint256
     amount: uint256
-    payee: address
+    payee: uint256
     payee_revenue: uint256
 
 
@@ -124,6 +124,8 @@ def __init__(_cusd_address: address, _exchange_addresses: address[6]):
         maxCredit: 0,
         availableCredit: 0
     }
+    self.numPayees = 1
+    self.payees[0] = msg.sender
 
     for i in range(6):
         self.exchanges[i].exchangeAddress = _exchange_addresses[i]
@@ -154,9 +156,9 @@ def _get_uniswap_token_imbalance(i: uint256) -> int128:
         return int128(1 / (avg_sqrt_price_difference_from_target * avg_reciprocal_liquidity))
 
 @internal
-def _credit_limit(_level: uint256, _multiplier: uint256) -> uint256:
+def _credit_limit(_level: uint256) -> uint256:
     # returns the triangle number of the level
-    return _multiplier * _level * (_level + 1) / 2
+    return _level * (_level + 1) / 2
 
 @internal
 def _issue_credit() -> bool:
@@ -209,6 +211,7 @@ def _update_borrow_status(_nft: address, _nft_id: uint256) -> bool:
         self.linesOfCredit[_nft][_nft_id].status = DELINQUENT
         return True
     elif current_status == BORROWING:
+        self.linesOfCredit[_nft][_nft_id].penalty += self.linesOfCredit[_nft][_nft_id].
         self.linesOfCredit[_nft][_nft_id].status = OVERDUE
         self.linesOfCredit[_nft][_nft_id].lastEvent += MONTH_IN_SECONDS
         return True
@@ -227,23 +230,21 @@ def approveCUSD(_amount: uint256):
     self.cusd.approve(self, _amount)
 
 @external
-def openLineOfCredit(_nft_address: address, _nft_id: uint256, _multiplier: uint256, _payee: address) -> bool:
-    assert _multiplier in {100, 1000, 10000, 100000}
+def openLineOfCredit(_nft_address: address, _nft_id: uint256, _payee: uint256) -> bool:
     assert ERC721(_nft_address).ownerOf(_nft_id) == msg.sender
     assert not self.linesOfCredit[_nft_address] or not self.linesOfCredit[_nft_address][_nft_id]
-    assert _payee != ZERO_ADDRESS and _payee != msg.sender
-    self.cusd.burnFrom(msg.sender, 5 * _multiplier * 10**18)
+    assert _payee < self.numPayees
+    self.cusd.burnFrom(msg.sender, 5 * 10**18)
     self.linesOfCredit[_nft_address][_nft_id] = {
         creditLevel: 1,
-        multiplier: _multiplier,
         status: status.READY,
         lastEvent: block.timestamp,
         outstandingDebt: 0,
         outstandingPenalty: 0,
         owner: msg.sender,
-        payee: msg.sender
+        payee: _payee
     }
-    log OpenLineOfCredit(msg.sender, _nft_address, _nft_id, _multiplier, _payee)
+    log OpenLineOfCredit(msg.sender, _nft_address, _nft_id, _payee)
     return True
 
 @external
@@ -252,7 +253,7 @@ def borrow(_nft_address: address, _nft_id: uint256, _amount: uint256) -> bool:
     assert self.linesOfCredit[_nft_address][_nft_id].owner == msg.sender
     self._switchboard()
     assert self.creditLevels[credit_level].availableCredit >= _amount
-    assert _amount <= self._credit_limit(self.linesOfCredit[_nft_address][_nft_id].creditLevel, self.linesOfCredit[_nft_address][_nft_id].multiplier)
+    assert _amount <= self._credit_limit(self.linesOfCredit[_nft_address][_nft_id].creditLevel)
     self.linesOfCredit[_nft_address][_nft_id].status = status.BORROWING
     self.creditLevels[self.linesOfCredit[_nft_address][_nft_id].creditLevel].availableCredit -= _amount
     self.linesOfCredit[_nft_address][_nft_id].outstandingDebt += _amount
