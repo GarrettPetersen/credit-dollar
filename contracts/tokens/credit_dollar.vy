@@ -28,7 +28,6 @@ symbol: public(string[4])
 balances: Hashmap[address, uint256]
 allowances: Hashmap[address, Hashmap[address, uint256]]
 interestFactor: public(uint256)
-flashmintProfit: int128
 
 event Transfer:
     sender: indexed(address)
@@ -162,24 +161,10 @@ def flashMint(_amount: uint256) -> int256:
     assert _amount > 0, "CUSD::flashMint: amount must be greater than 0"
     old_profit: int128 = self.flashmintProfit
     interest: uint256 = _amount * self.interestFactor / 10000
-    self.flashmintProfit -= _amount
     self._mint(msg.sender, _amount)
     # user can do anything here, so long as they repay the loan with interest
     ERC20Borrower(msg.sender).erc20DeFi(_amount, interest)
-    self._transferCoins(msg.sender, self, _amount + interest)
-    self.flashmintProfit += _amount + interest
-    assert self.flashmintProfit == old_profit + interest, "CUSD::flashMint: wrong interest"
+    self._burn(msg.sender, _amount)
+    self._transferCoins(msg.sender, self.owner, interest)
     log Flash(msg.sender, _amount, interest)
     return interest
-
-@external
-def takeProfits() -> bool:
-    assert self.flashmintProfit > 0, "CUSD::takeProfits: no profits to take"
-    half_profit: uint256 = self.flashmintProfit / 2
-    self.flashmintProfit = 0
-    self._transferCoins(self, self.founder, half_profit) # transfer half to founder
-    amount_to_burn: uint256 = self.balances[self]
-    self._burn(self, amount_to_burn) # burn the rest
-    log Transfer(self, self.founder, half_profit)
-    log Transfer(self, empty(address), amount_to_burn)
-    return True
