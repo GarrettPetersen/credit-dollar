@@ -9,11 +9,9 @@ This contract contains:
 
 from vyper.interfaces import ERC20
 from vyper.interfaces import ERC20Detailed
-from interfaces import ERC20Flash
 
 implements: ERC20
 implements: ERC20Detailed
-implements: ERC20Flash
 
 contract ERC20Borrower():
     def erc20DeFi(cusd_amount: uint256, interest: uint256): modifying
