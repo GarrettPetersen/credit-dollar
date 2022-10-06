@@ -8,8 +8,15 @@ This contract contains:
 """
 
 from vyper.interfaces import ERC20
+from vyper.interfaces import ERC20Detailed
+from interfaces import ERC20Flash
 
 implements: ERC20
+implements: ERC20Detailed
+implements: ERC20Flash
+
+contract ERC20Borrower():
+    def erc20DeFi(cusd_amount: uint256, interest: uint256): modifying
 
 INIT_SUPPLY: constant(unit256) = 10000000000000000000000000
 INTEREST_FACTOR: constant(uint256) = 8 # 8 / 10000 = 0.08%
@@ -160,6 +167,7 @@ def flashMint(_amount: uint256) -> int256:
     self.flashmintProfit -= _amount
     self._mint(msg.sender, _amount)
     # user can do anything here, so long as they repay the loan with interest
+    ERC20Borrower(msg.sender).erc20DeFi(_amount, interest)
     self._transferCoins(msg.sender, self, _amount + interest)
     self.flashmintProfit += _amount + interest
     assert self.flashmintProfit == old_profit + interest, "CUSD::flashMint: wrong interest"
