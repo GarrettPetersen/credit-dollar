@@ -2,6 +2,7 @@
 
 from vyper.interfaces import ERC165
 from vyper.interfaces import ERC721
+from vyper.interfaces import ERC721Metadata
 
 implements: ERC721
 implements: ERC165
@@ -50,6 +51,8 @@ event ApprovalForAll:
     operator: indexed(address)
     approved: bool
 
+
+MAX_NUM_PAYEES: constant(uint256) = 1000
 
 # @dev Mapping from NFT ID to the address that owns it.
 idToOwner: HashMap[uint256, address]
@@ -334,6 +337,7 @@ def mint(_to: address, _tokenId: uint256) -> bool:
     @param _tokenId The token id to mint.
     @return A boolean that indicates if the operation was successful.
     """
+    assert _tokenId <= MAX_NUM_PAYEES
     # Throws if `msg.sender` is not the minter
     assert msg.sender == self.minter
     # Throws if `_to` is zero address

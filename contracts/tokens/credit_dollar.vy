@@ -14,7 +14,7 @@ implements: ERC20
 implements: ERC20Detailed
 
 contract ERC20Borrower():
-    def erc20DeFi(cusd_amount: uint256, interest: uint256): modifying
+    def erc20DeFi(cusd_amount: uint256, interest: uint256): nonpayable
 
 INIT_SUPPLY: constant(unit256) = 10000000000000000000000000
 INTEREST_FACTOR: constant(uint256) = 8 # 8 / 10000 = 0.08%

@@ -70,8 +70,6 @@ struct levelCredit:
     availableCredit: uint256
 
 creditLevels: HashMap[uint256, levelCredit]
-payees: HashMap[uint256, address]
-numPayees: uint256
 
 struct exchange:
     exchangeAddress: address
@@ -126,8 +124,6 @@ def __init__(_cusd_address: address, _exchange_addresses: address[6]):
         maxCredit: 0,
         availableCredit: 0
     }
-    self.numPayees = 1
-    self.payees[0] = msg.sender
 
     for i in range(6):
         self.exchanges[i].exchangeAddress = _exchange_addresses[i]
