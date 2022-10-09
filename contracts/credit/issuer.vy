@@ -227,6 +227,11 @@ def _update_borrow_status(_nft: address, _nft_id: uint256) -> bool:
         return False
 
 @internal
+def _pay_debt(_nft: address, _nft_id: address, _amount: uint256):
+    cusd.burnFrom(msg.sender, _amount)
+    self.linesOfCredit[_nft][_nft_id].outstandingDebt -= _amount
+
+@internal
 def _pay_penalty(_nft: address, _nft_id: uint256, _amount: uint256):
     self.cusd.burnFrom(msg.sender, _amount/2)
     self.cusd.transferFrom(
@@ -238,9 +243,8 @@ def _pay_penalty(_nft: address, _nft_id: uint256, _amount: uint256):
 
 @internal
 def _close_loan(_nft: address, _nft_id: uint256):
-    self.linesOfCredit[_nft][_nft_id].outstandingDebt = 0
+    self._pay_debt(_nft, _nft_id, self.linesOfCredit[_nft][_nft_id].outstandingDebt)
     self._pay_penalty(_nft, _nft_id, self.linesOfCredit[_nft][_nft_id].outstandingPenalty)
-    self.linesOfCredit[_nft][_nft_id].outstandingPenalty = 0
     self.linesOfCredit[_nft][_nft_id].status = status.READY
     self.linesOfCredit[_nft][_nft_id].creditLevel += 1
     ERC721(_nft).transferFrom(
@@ -310,14 +314,13 @@ def repay(_nft_address: address, _nft_id: uint256, _amount: uint256) -> bool:
     assert total_owed > 0
     assert _amount <= total_owed
     self._switchboard()
-    self.cusd.burnFrom(msg.sender, _amount)
     if _amount == total_owed:
         self._close_loan(_nft_address, _nft_id)
     elif _amount > debt:
-        self.linesOfCredit[_nft_address][_nft_id].outstandingDebt = 0
+        self._pay_debt(_nft_address, _nft_id, debt)
         self._pay_penalty(_nft_address, _nft_id, _amount - debt)
     else:
-        self.linesOfCredit[_nft_address][_nft_id].outstandingDebt -= _amount
+        self._pay_debt(_nft_address, _nft_id, _amount)
     return True
 
 @external
