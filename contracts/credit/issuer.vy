@@ -203,25 +203,25 @@ def _switchboard():
 def _update_borrow_status(_nft: address, _nft_id: uint256) -> bool:
     current_status: status = self.linesOfCredit[_nft][_nft_id].status
     current_level: uint256 = self.linesOfCredit[_nft][_nft_id].level
-    if current_status == READY or current_status == DELINQUENT:
+    if current_status == status.READY or current_status == status.DELINQUENT:
         return True
     time_since_last_update: uint256 = block.timestamp - self.linesOfCredit[_nft][_nft_id].lastEvent
     if time_since_last_update <= MONTH_IN_SECONDS:
         return True
     elif time_since_last_update > MONTH_IN_SECONDS*2:
-        if current_status == BORROWING:
+        if current_status == status.BORROWING:
             self.linesOfCredit[_nft][_nft_id].outstandingPenalty += 2 * current_level * DECIMAL_MULTIPLIER
-        elif current_status == OVERDUE:
+        elif current_status == status.OVERDUE:
             self.linesOfCredit[_nft][_nft_id].outstandingPenalty += current_level * DECIMAL_MULTIPLIER
-        self.linesOfCredit[_nft][_nft_id].status = DELINQUENT
+        self.linesOfCredit[_nft][_nft_id].status = status.DELINQUENT
         return True
-    elif current_status == BORROWING:
+    elif current_status == status.BORROWING:
         self.linesOfCredit[_nft][_nft_id].penalty += current_level * DECIMAL_MULTIPLIER
-        self.linesOfCredit[_nft][_nft_id].status = OVERDUE
+        self.linesOfCredit[_nft][_nft_id].status = status.OVERDUE
         self.linesOfCredit[_nft][_nft_id].lastEvent += MONTH_IN_SECONDS
         return True
-    elif current_status == OVERDUE:
-        self.linesOfCredit[_nft][_nft_id].status = DELINQUENT
+    elif current_status == status.OVERDUE:
+        self.linesOfCredit[_nft][_nft_id].status = status.DELINQUENT
         return True
     else:
         return False
@@ -241,7 +241,7 @@ def _close_loan(_nft: address, _nft_id: uint256):
     self.linesOfCredit[_nft][_nft_id].outstandingDebt = 0
     self._pay_penalty(_nft, _nft_id, self.linesOfCredit[_nft][_nft_id].outstandingPenalty)
     self.linesOfCredit[_nft][_nft_id].outstandingPenalty = 0
-    self.linesOfCredit[_nft][_nft_id].status = READY
+    self.linesOfCredit[_nft][_nft_id].status = status.READY
     self.linesOfCredit[_nft][_nft_id].creditLevel += 1
     ERC721(_nft).transferFrom(
         self,
