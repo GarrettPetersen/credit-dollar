@@ -251,7 +251,7 @@ def _close_loan(_nft: address, _nft_id: uint256):
 
 @external
 def approveNFT(_nft_address: address, _nft_id: uint256):
-    ERC721(_nft_address).approve(_nft_id, self)
+    ERC721(_nft_address).approve(self, _nft_id)
 
 @external
 def approveCUSD(_amount: uint256):
