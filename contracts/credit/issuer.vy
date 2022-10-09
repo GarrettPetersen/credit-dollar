@@ -243,6 +243,11 @@ def _close_loan(_nft: address, _nft_id: uint256):
     self.linesOfCredit[_nft][_nft_id].outstandingPenalty = 0
     self.linesOfCredit[_nft][_nft_id].status = READY
     self.linesOfCredit[_nft][_nft_id].creditLevel += 1
+    ERC721(_nft).transferFrom(
+        self,
+        self.linesOfCredit[_nft][_nft_id].owner,
+        _nft_id
+    )
 
 @external
 def approveNFT(_nft_address: address, _nft_id: uint256):
@@ -280,6 +285,11 @@ def borrow(_nft_address: address, _nft_id: uint256) -> bool:
     assert self.creditLevels[credit_level].availableCredit >= borrow_amount
     assert _amount <= self._credit_limit(self.linesOfCredit[_nft_address][_nft_id].creditLevel)
     self._switchboard()
+    ERC721(_nft_address).transferFrom(
+        msg.sender,
+        self,
+        _nft_id
+    )
     self.linesOfCredit[_nft_address][_nft_id].status = status.BORROWING
     self.creditLevels[self.linesOfCredit[_nft_address][_nft_id].creditLevel].availableCredit -= borrow_amount
     self.linesOfCredit[_nft_address][_nft_id].outstandingDebt += borrow_amount
@@ -308,4 +318,15 @@ def repay(_nft_address: address, _nft_id: uint256, _amount: uint256) -> bool:
         self._pay_penalty(_nft_address, _nft_id, _amount - debt)
     else:
         self.linesOfCredit[_nft_address][_nft_id].outstandingDebt -= _amount
+    return True
+
+@external
+def liquidate(_nft_address: address, _nft_id: uint256) -> bool:
+    self._update_borrow_status(_nft_address, _nft_id)
+    assert self.linesOfCredit[_nft_address][_nft_id].status == status.DELINQUENT
+    self._switchboard()
+    old_owner: address = self.linesOfCredit[_nft_address][_nft_id].owner
+    self.linesOfCredit[_nft_address][_nft_id].owner = msg.sender
+    self._close_loan(_nft_address, _nft_id)
+    log Liquidate(old_owner, msg.sender, _nft_address, _nft_id)
     return True
