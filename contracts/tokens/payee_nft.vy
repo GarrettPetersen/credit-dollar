@@ -69,11 +69,6 @@ ownerToNFTokenCount: HashMap[address, uint256]
 # @dev Mapping from owner address to mapping of operator addresses.
 ownerToOperators: HashMap[address, HashMap[address, bool]]
 
-# @dev Address of minter, who can mint a token
-minter: address
-
-baseURL: String[53]
-
 # @dev Static list of supported ERC165 interface ids
 SUPPORTED_INTERFACES: constant(bytes4[2]) = [
     # ERC165 interface ID of ERC165
@@ -372,9 +367,3 @@ def burn(_tokenId: uint256):
     self._clearApproval(owner, _tokenId)
     self._removeTokenFrom(owner, _tokenId)
     log Transfer(owner, empty(address), _tokenId)
-
-
-@view
-@external
-def tokenURI(tokenId: uint256) -> String[132]:
-    return concat(self.baseURL, uint2str(tokenId))

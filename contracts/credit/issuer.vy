@@ -80,6 +80,12 @@ struct exchange:
 
 exchanges: exchange[6]
 
+struct payeeInfo:
+    numBorrowers: uint256
+    totalRevenue: uint256
+
+payees: HashMap[uint256, payeeInfo]
+
 interface UniswapV3Pool:
     def token0() -> address: view
     def token1() -> address: view
@@ -125,6 +131,7 @@ def __init__(_cusd_address: address, _exchange_addresses: address[6]):
         maxCredit: 0,
         availableCredit: 0
     }
+    self.payees = {}
 
     for i in range(6):
         self.exchanges[i].exchangeAddress = _exchange_addresses[i]
@@ -233,12 +240,14 @@ def _pay_debt(_nft: address, _nft_id: address, _amount: uint256):
 
 @internal
 def _pay_penalty(_nft: address, _nft_id: uint256, _amount: uint256):
-    self.cusd.burnFrom(msg.sender, _amount/2)
+    split: uint256 = _amount / 2
+    self.cusd.burnFrom(msg.sender, split)
     self.cusd.transferFrom(
         msg.sender,
         payee.ownerOf(linesOfCredit[_nft][_nft_id].payee),
-        _amount/2
+        split
     )
+    self.payees[self.linesOfCredit[_nft][_nft_id].payee].totalRevenue += split
     self.linesOfCredit[_nft][_nft_id].outstandingPenalty -= _amount
 
 @internal
@@ -262,14 +271,15 @@ def approveCUSD(_amount: uint256):
     self.cusd.approve(self, _amount)
 
 @external
-def openLineOfCredit(_nft_address: address, _nft_id: uint256, _payee: uint256, _starting_level: uint256) -> bool:
+def openLineOfCredit(_nft_address: address, _nft_id: uint256, _payee: uint256) -> bool:
     assert ERC721(_nft_address).ownerOf(_nft_id) == msg.sender
     assert not self.linesOfCredit[_nft_address] or not self.linesOfCredit[_nft_address][_nft_id]
-    assert payee(_payee).ownerOf() != ZERO_ADDRESS
+    assert payee(_payee).ownerOf() != empty(address)
+
     self._switchboard()
-    self.cusd.burnFrom(msg.sender, 5 * self._credit_limit(_starting_level))
+    self.cusd.burnFrom(msg.sender, 500 * DECIMAL_MULTIPLIER)
     self.linesOfCredit[_nft_address][_nft_id] = {
-        creditLevel: _starting_level,
+        creditLevel: 1,
         status: status.READY,
         loanTime: block.timestamp,
         lastEvent: block.timestamp,
@@ -278,6 +288,7 @@ def openLineOfCredit(_nft_address: address, _nft_id: uint256, _payee: uint256, _
         owner: msg.sender,
         payee: _payee
     }
+    self.payees[_payee].numBorrowers += 1
     log OpenLineOfCredit(msg.sender, _nft_address, _nft_id, _payee)
     return True
 
@@ -306,7 +317,6 @@ def borrow(_nft_address: address, _nft_id: uint256) -> bool:
 @external
 def repay(_nft_address: address, _nft_id: uint256, _amount: uint256) -> bool:
     assert _amount > 0
-    assert self.linesOfCredit[_nft_address][_nft_id].loanTime + MONTH_IN_SECONDS / 2 >= block.timestamp
     self._update_borrow_status(_nft_address, _nft_id)
     debt: uint256 = self.linesOfCredit[_nft_address][_nft_id].outstandingDebt
     penalty: uint256 = self.linesOfCredit[_nft_address][_nft_id].outstandingPenalty
@@ -314,7 +324,7 @@ def repay(_nft_address: address, _nft_id: uint256, _amount: uint256) -> bool:
     assert total_owed > 0
     assert _amount <= total_owed
     self._switchboard()
-    if _amount == total_owed:
+    if _amount >= total_owed:
         self._close_loan(_nft_address, _nft_id)
     elif _amount > debt:
         self._pay_debt(_nft_address, _nft_id, debt)
