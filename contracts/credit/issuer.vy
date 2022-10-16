@@ -277,6 +277,20 @@ def _close_loan(_nft: address, _nft_id: uint256):
         _nft_id
     )
 
+@view
+@internal
+def _loan_is_available(_nft_address: address, _nft_id: uint256) -> bool:
+    line_of_credit: LineOfCredit = self.linesOfCredit[_nft_address][_nft_id]
+    if self.protocolStatus == Protocol.EMERGENCY:
+        return False
+    if line_of_credit.status != Status.READY:
+        return False
+    if line_of_credit.loanTime > block.timestamp - MONTH_IN_SECONDS/2:
+        return False
+    if self.creditLevels[line_of_credit.creditLevel].availableCredit < self._credit_limit(line_of_credit.creditLevel):
+        return False
+    return True
+
 @external
 def approveNFT(_nft_address: address, _nft_id: uint256):
     ERC721(_nft_address).approve(self, _nft_id)
@@ -374,20 +388,7 @@ def getPayeeTotalRevenue(_payee: uint256) -> uint256:
     return self.payees[_payee].totalRevenue
 
 @view
-@internal
-def _loan_is_available(_nft_address: address, _nft_id: uint256) -> bool:
-    line_of_credit: LineOfCredit = self.linesOfCredit[_nft_address][_nft_id]
-    if self.protocolStatus == Protocol.EMERGENCY:
-        return False
-    if line_of_credit.status != Status.READY:
-        return False
-    if line_of_credit.loanTime > block.timestamp - MONTH_IN_SECONDS/2:
-        return False
-    if self.creditLevels[line_of_credit.creditLevel].availableCredit < self._credit_limit(line_of_credit.creditLevel):
-        return False
-    return True
-
-@view
 @external
 def getLoanAvailability(_nft_address: address, _nft_id: uint256) -> bool:
     return self._loan_is_available(_nft_address, _nft_id)
+    
