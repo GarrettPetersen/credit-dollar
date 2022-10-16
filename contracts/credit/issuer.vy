@@ -296,6 +296,10 @@ def openLineOfCredit(_nft_address: address, _nft_id: uint256, _payee: uint256) -
 def borrow(_nft_address: address, _nft_id: uint256) -> bool:
     assert self.linesOfCredit[_nft_address][_nft_id].status == status.READY
     assert self.linesOfCredit[_nft_address][_nft_id].owner == msg.sender
+
+    # You can't take out a loan within 15 days of the start of your last loan (prevents rapid-fire loans)
+    assert self.linesOfCredit[_nft_address][_nft_id].loanTime <= block.timestamp - MONTH_IN_SECONDS/2
+    
     borrow_amount: uint256 = self._credit_limit(self.linesOfCredit[_nft_address][_nft_id].creditLevel)
     assert self.creditLevels[credit_level].availableCredit >= borrow_amount
     assert _amount <= self._credit_limit(self.linesOfCredit[_nft_address][_nft_id].creditLevel)
