@@ -50,7 +50,6 @@ def __init__():
     self.name = "Credit Dollar"
     self.symbol = "CUSD"
     self.interestFactor = INTEREST_FACTOR
-    self.flashmintProfit = 0
     self.founder = msg.sender
     self.minter = self.founder
     self.balances[self.founder] = self.totalSupply
@@ -156,10 +155,14 @@ def setMinter(_account: address) -> bool:
     self.minter = _account # intended to set minting to the issuer contract
     return True
 
+@view
+@external
+def getInterestFactor() -> uint256:
+    return self.interestFactor
+
 @external
 def flashMint(_amount: uint256) -> int256:
     assert _amount > 0, "CUSD::flashMint: amount must be greater than 0"
-    old_profit: int128 = self.flashmintProfit
     interest: uint256 = _amount * self.interestFactor / 10000
     self._mint(msg.sender, _amount)
     # user can do anything here, so long as they repay the loan with interest
