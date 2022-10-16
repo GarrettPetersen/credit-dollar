@@ -171,7 +171,7 @@ def _get_uniswap_token_imbalance(i: uint256) -> int128:
 
 @internal
 def _credit_limit(_level: uint256) -> uint256:
-    # returns the triangle number of the level
+    # returns the triangle number of the level * 100
     return DECIMAL_MULTIPLIER * 100 * _level * (_level + 1) / 2
 
 @internal
@@ -231,17 +231,18 @@ def _update_borrow_status(_nft: address, _nft_id: uint256) -> bool:
         return True
     elif time_since_last_update > MONTH_IN_SECONDS*2:
         if current_status == Status.BORROWING:
-            self.linesOfCredit[_nft][_nft_id].outstandingPenalty += 2 * current_level * DECIMAL_MULTIPLIER
+            self.linesOfCredit[_nft][_nft_id].outstandingPenalty += 2 * current_level * DECIMAL_MULTIPLIER * 100
         elif current_status == Status.OVERDUE:
-            self.linesOfCredit[_nft][_nft_id].outstandingPenalty += current_level * DECIMAL_MULTIPLIER
+            self.linesOfCredit[_nft][_nft_id].outstandingPenalty += current_level * DECIMAL_MULTIPLIER * 100
         self.linesOfCredit[_nft][_nft_id].status = Status.LIQUIDATABLE
         return True
     elif current_status == Status.BORROWING:
-        self.linesOfCredit[_nft][_nft_id].penalty += current_level * DECIMAL_MULTIPLIER
+        self.linesOfCredit[_nft][_nft_id].penalty += current_level * DECIMAL_MULTIPLIER * 100
         self.linesOfCredit[_nft][_nft_id].status = Status.OVERDUE
         self.linesOfCredit[_nft][_nft_id].lastEvent += MONTH_IN_SECONDS
         return True
     elif current_status == Status.OVERDUE:
+        self.linesOfCredit[_nft][_nft_id].penalty += current_level * DECIMAL_MULTIPLIER * 100
         self.linesOfCredit[_nft][_nft_id].status = Status.LIQUIDATABLE
         return True
     else:
@@ -341,7 +342,13 @@ def repay(_nft_address: address, _nft_id: uint256, _amount: uint256) -> bool:
     penalty: uint256 = self.linesOfCredit[_nft_address][_nft_id].outstandingPenalty
     total_owed: uint256 = debt + penalty
     assert total_owed > 0
-    assert _amount <= total_owed
+    min_payment: uint256 = self.linesOfCredit[_nft_address][_nft_id].creditLevel * 100 * DECIMAL_MULTIPLIER
+    if _amount >= min_payment:
+        # Allows liquidatable NFTs to be saved by the user
+        self.linesOfCredit[_nft_address][_nft_id].lastEvent = block.timestamp
+        if self.linesOfCredit[_nft_address][_nft_id].status == Status.LIQUIDATABLE:
+            self.linesOfCredit[_nft_address][_nft_id].status = Status.OVERDUE
+
     self._switchboard()
     if _amount >= total_owed:
         self._close_loan(_nft_address, _nft_id)
