@@ -171,3 +171,4 @@ def flashMint(_amount: uint256) -> int256:
     self._transferCoins(msg.sender, self.owner, interest)
     log Flash(msg.sender, _amount, interest)
     return interest
+    
