@@ -17,6 +17,9 @@ interface ERC721Receiver:
             _data: Bytes[1024]
         ) -> bytes4: nonpayable
 
+interface Issuer:
+    def getPayeeNumBorrowers(_payee: address) -> uint256: view
+    def getPayeeTotalRevenue(_payee: address) -> uint256: view
 
 # @dev Emits when ownership of any NFT changes by any mechanism. This event emits when NFTs are
 #      created (`from` == 0) and destroyed (`to` == 0). Exception: during contract creation, any
@@ -78,11 +81,12 @@ SUPPORTED_INTERFACES: constant(bytes4[2]) = [
 ]
 
 @external
-def __init__(_cusd_address: address):
+def __init__(_cusd_address: address, _issuer_address: address):
     """
     @dev Contract constructor.
     """
     self.cusd = ERC20(_cusd_address)
+    self.issuer = Issuer(_issuer_address)
 
 
 @pure
@@ -367,3 +371,51 @@ def burn(_tokenId: uint256):
     self._clearApproval(owner, _tokenId)
     self._removeTokenFrom(owner, _tokenId)
     log Transfer(owner, empty(address), _tokenId)
+
+# ERC721 Metadata
+@internal
+def _generate_svg(_tokenId: uint256) -> String[1000]:
+    """
+    @dev Generates SVG for the NFT
+    @param _tokenId The NFT to generate SVG for.
+    """
+    # Generate SVG
+    svg: String[1000] = f"""
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+        <style>
+            .base {{
+                fill: white;
+                font-family: sans-serif;
+                font-size: 24px;
+            }}
+            .large {{
+            	fill: white;
+                font-family: sans-serif;
+                font-size: 150px;
+            }}
+        </style>
+        <rect rx="50" ry="50" width="100%" height="100%" fill="black" />
+        <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" class="large">ↀ</text>
+        <text x="50%" y="70%" dominant-baseline="middle" text-anchor="middle" class="base">
+            Borrowers: {self.issuer.getPayeeNumBorrowers(_tokenId)}
+            <tspan x="50%" dy="30">Total revenue: {self.issuer.getPayeeTotalRevenue(_tokenId)/(10**18)} ↀ</tspan>
+            <tspan x="50%" y="20%">Payee #{_tokenId}</tspan>
+        </text>
+        
+    </svg>
+    """
+    # we encode the SVG to base64
+    return svg.encode('base64')
+
+@view
+@external
+def tokenURI(_tokenId: uint256) -> String[100]:
+    """
+    @dev A distinct URI (RFC 3986) for a given NFT.
+         Throws if `_tokenId` is not a valid NFT.
+    @param _tokenId Id for which we want uri.
+    @return URI of _tokenId.
+    """
+    # Throws if `_tokenId` is not a valid NFT
+    assert self.idToOwner[_tokenId] != empty(address)
+    return concat("{", convert(_tokenId, String[100]))
