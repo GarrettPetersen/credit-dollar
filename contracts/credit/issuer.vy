@@ -22,7 +22,7 @@ Info tied to a given ERC721:
 - Penalties split equally between burn, LP, and contract owner
 - Tracks last payment or penalty, both of which reset the countdown to future penalties and delinquency
 - NFTs cannot be transferred with outstanding debt
-- NFTs can be seized if they are delinquent with no recent minimum payments
+- NFTs can be seized if they are LIQUIDATABLE with no recent minimum payments
 - On full repayment of debt, increases credit level by one and updates max credit numbers for issuer
 """
 
@@ -48,11 +48,18 @@ nextLevel: uint256
 MONTH_IN_SECONDS: constant(uint256) = 2592000
 DECIMAL_MULTIPLIER: constant(uint256) = 10**18
 
-enum status:
+enum Status:
     READY
     BORROWING
     OVERDUE
-    DELINQUENT
+    LIQUIDATABLE
+
+enum Protocol:
+    HEALTHY
+    UNHEALTHY
+    EMERGENCY
+
+protocolStatus: public(Protocol)
 
 struct lineOfCredit:
     creditLevel: uint256
@@ -132,6 +139,7 @@ def __init__(_cusd_address: address, _exchange_addresses: address[6]):
         availableCredit: 0
     }
     self.payees = {}
+    self.protocolStatus = Protocol.HEALTHY
 
     for i in range(6):
         self.exchanges[i].exchangeAddress = _exchange_addresses[i]
@@ -170,7 +178,13 @@ def _credit_limit(_level: uint256) -> uint256:
 def _issue_credit() -> bool:
     if self.creditBuffer <= 0:
         self.creditBuffer = 0
+        if self.protocolStatus == Protocol.HEALTHY:
+            self.protocolStatus = Protocol.UNHEALTHY
+        elif self.protocolStatus == Protocol.UNHEALTHY:
+            self.protocolStatus = Protocol.EMERGENCY
         return True
+    else:
+        self.protocolStatus = Protocol.HEALTHY
 
     for i in range(10):
         credit_to_issue: int128 = self.creditLevels[self.nextLevel].maxCredit - self.creditLevels[self.nextLevel].availableCredit
@@ -210,25 +224,25 @@ def _switchboard():
 def _update_borrow_status(_nft: address, _nft_id: uint256) -> bool:
     current_status: status = self.linesOfCredit[_nft][_nft_id].status
     current_level: uint256 = self.linesOfCredit[_nft][_nft_id].level
-    if current_status == status.READY or current_status == status.DELINQUENT:
+    if current_status == Status.READY or current_status == Status.LIQUIDATABLE:
         return True
     time_since_last_update: uint256 = block.timestamp - self.linesOfCredit[_nft][_nft_id].lastEvent
     if time_since_last_update <= MONTH_IN_SECONDS:
         return True
     elif time_since_last_update > MONTH_IN_SECONDS*2:
-        if current_status == status.BORROWING:
+        if current_status == Status.BORROWING:
             self.linesOfCredit[_nft][_nft_id].outstandingPenalty += 2 * current_level * DECIMAL_MULTIPLIER
-        elif current_status == status.OVERDUE:
+        elif current_status == Status.OVERDUE:
             self.linesOfCredit[_nft][_nft_id].outstandingPenalty += current_level * DECIMAL_MULTIPLIER
-        self.linesOfCredit[_nft][_nft_id].status = status.DELINQUENT
+        self.linesOfCredit[_nft][_nft_id].status = Status.LIQUIDATABLE
         return True
-    elif current_status == status.BORROWING:
+    elif current_status == Status.BORROWING:
         self.linesOfCredit[_nft][_nft_id].penalty += current_level * DECIMAL_MULTIPLIER
-        self.linesOfCredit[_nft][_nft_id].status = status.OVERDUE
+        self.linesOfCredit[_nft][_nft_id].status = Status.OVERDUE
         self.linesOfCredit[_nft][_nft_id].lastEvent += MONTH_IN_SECONDS
         return True
-    elif current_status == status.OVERDUE:
-        self.linesOfCredit[_nft][_nft_id].status = status.DELINQUENT
+    elif current_status == Status.OVERDUE:
+        self.linesOfCredit[_nft][_nft_id].status = Status.LIQUIDATABLE
         return True
     else:
         return False
@@ -254,7 +268,7 @@ def _pay_penalty(_nft: address, _nft_id: uint256, _amount: uint256):
 def _close_loan(_nft: address, _nft_id: uint256):
     self._pay_debt(_nft, _nft_id, self.linesOfCredit[_nft][_nft_id].outstandingDebt)
     self._pay_penalty(_nft, _nft_id, self.linesOfCredit[_nft][_nft_id].outstandingPenalty)
-    self.linesOfCredit[_nft][_nft_id].status = status.READY
+    self.linesOfCredit[_nft][_nft_id].status = Status.READY
     self.linesOfCredit[_nft][_nft_id].creditLevel += 1
     ERC721(_nft).transferFrom(
         self,
@@ -280,7 +294,7 @@ def openLineOfCredit(_nft_address: address, _nft_id: uint256, _payee: uint256) -
     self.cusd.burnFrom(msg.sender, 500 * DECIMAL_MULTIPLIER)
     self.linesOfCredit[_nft_address][_nft_id] = {
         creditLevel: 1,
-        status: status.READY,
+        status: Status.READY,
         loanTime: block.timestamp,
         lastEvent: block.timestamp,
         outstandingDebt: 0,
@@ -294,12 +308,13 @@ def openLineOfCredit(_nft_address: address, _nft_id: uint256, _payee: uint256) -
 
 @external
 def borrow(_nft_address: address, _nft_id: uint256) -> bool:
-    assert self.linesOfCredit[_nft_address][_nft_id].status == status.READY
+    assert self.linesOfCredit[_nft_address][_nft_id].status == Status.READY
     assert self.linesOfCredit[_nft_address][_nft_id].owner == msg.sender
+    assert self.protocolStatus != Protocol.EMERGENCY
 
     # You can't take out a loan within 15 days of the start of your last loan (prevents rapid-fire loans)
     assert self.linesOfCredit[_nft_address][_nft_id].loanTime <= block.timestamp - MONTH_IN_SECONDS/2
-    
+
     borrow_amount: uint256 = self._credit_limit(self.linesOfCredit[_nft_address][_nft_id].creditLevel)
     assert self.creditLevels[credit_level].availableCredit >= borrow_amount
     assert _amount <= self._credit_limit(self.linesOfCredit[_nft_address][_nft_id].creditLevel)
@@ -309,7 +324,7 @@ def borrow(_nft_address: address, _nft_id: uint256) -> bool:
         self,
         _nft_id
     )
-    self.linesOfCredit[_nft_address][_nft_id].status = status.BORROWING
+    self.linesOfCredit[_nft_address][_nft_id].status = Status.BORROWING
     self.creditLevels[self.linesOfCredit[_nft_address][_nft_id].creditLevel].availableCredit -= borrow_amount
     self.linesOfCredit[_nft_address][_nft_id].outstandingDebt += borrow_amount
     self.linesOfCredit[_nft_address][_nft_id].loanTime = block.timestamp
@@ -340,10 +355,20 @@ def repay(_nft_address: address, _nft_id: uint256, _amount: uint256) -> bool:
 @external
 def liquidate(_nft_address: address, _nft_id: uint256) -> bool:
     self._update_borrow_status(_nft_address, _nft_id)
-    assert self.linesOfCredit[_nft_address][_nft_id].status == status.DELINQUENT
+    assert self.linesOfCredit[_nft_address][_nft_id].status == Status.LIQUIDATABLE
     self._switchboard()
     old_owner: address = self.linesOfCredit[_nft_address][_nft_id].owner
     self.linesOfCredit[_nft_address][_nft_id].owner = msg.sender
     self._close_loan(_nft_address, _nft_id)
     log Liquidate(old_owner, msg.sender, _nft_address, _nft_id)
     return True
+
+@view
+@external
+def getPayeeNumBorrowers(_payee: uint256) -> uint256:
+    return self.payees[_payee].numBorrowers
+
+@view
+@external
+def getPayeeTotalRevenue(_payee: uint256) -> uint256:
+    return self.payees[_payee].totalRevenue
