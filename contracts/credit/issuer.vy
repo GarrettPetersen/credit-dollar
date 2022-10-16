@@ -309,16 +309,9 @@ def openLineOfCredit(_nft_address: address, _nft_id: uint256, _payee: uint256) -
 
 @external
 def borrow(_nft_address: address, _nft_id: uint256) -> bool:
-    assert self.linesOfCredit[_nft_address][_nft_id].status == Status.READY
     assert self.linesOfCredit[_nft_address][_nft_id].owner == msg.sender
-    assert self.protocolStatus != Protocol.EMERGENCY
-
-    # You can't take out a loan within 15 days of the start of your last loan (prevents rapid-fire loans)
-    assert self.linesOfCredit[_nft_address][_nft_id].loanTime <= block.timestamp - MONTH_IN_SECONDS/2
-
+    assert self._loan_is_available(_nft_address, _nft_id)
     borrow_amount: uint256 = self._credit_limit(self.linesOfCredit[_nft_address][_nft_id].creditLevel)
-    assert self.creditLevels[credit_level].availableCredit >= borrow_amount
-    assert _amount <= self._credit_limit(self.linesOfCredit[_nft_address][_nft_id].creditLevel)
     self._switchboard()
     ERC721(_nft_address).transferFrom(
         msg.sender,
@@ -379,3 +372,22 @@ def getPayeeNumBorrowers(_payee: uint256) -> uint256:
 @external
 def getPayeeTotalRevenue(_payee: uint256) -> uint256:
     return self.payees[_payee].totalRevenue
+
+@view
+@internal
+def _loan_is_available(_nft_address: address, _nft_id: uint256) -> bool:
+    line_of_credit: LineOfCredit = self.linesOfCredit[_nft_address][_nft_id]
+    if self.protocolStatus == Protocol.EMERGENCY:
+        return False
+    if line_of_credit.status != Status.READY:
+        return False
+    if line_of_credit.loanTime > block.timestamp - MONTH_IN_SECONDS/2:
+        return False
+    if self.creditLevels[line_of_credit.creditLevel].availableCredit < self._credit_limit(line_of_credit.creditLevel):
+        return False
+    return True
+
+@view
+@external
+def getLoanAvailability(_nft_address: address, _nft_id: uint256) -> bool:
+    return self._loan_is_available(_nft_address, _nft_id)
