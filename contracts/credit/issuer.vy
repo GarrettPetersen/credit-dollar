@@ -130,7 +130,7 @@ event Liquidation:
 
 
 @external
-def __init__(_cusd_address: address, _exchange_addresses: address[6]):
+def __init__(_cusd_address: address, _payee_nft_address: address, _exchange_addresses: address[6]):
     self.founder = msg.sender
     self.cusdAddress = _cusd_address
     self.cusd = ERC20(_cusd_address)
@@ -140,6 +140,7 @@ def __init__(_cusd_address: address, _exchange_addresses: address[6]):
     }
     self.payees = {}
     self.protocolStatus = Protocol.HEALTHY
+    self.payee = ERC721(_payee_nft_address)
 
     for i in range(6):
         self.exchanges[i].exchangeAddress = _exchange_addresses[i]
@@ -259,7 +260,7 @@ def _pay_penalty(_nft: address, _nft_id: uint256, _amount: uint256):
     self.cusd.burnFrom(msg.sender, split)
     self.cusd.transferFrom(
         msg.sender,
-        payee.ownerOf(linesOfCredit[_nft][_nft_id].payee),
+        self.payee.ownerOf(linesOfCredit[_nft][_nft_id].payee),
         split
     )
     self.payees[self.linesOfCredit[_nft][_nft_id].payee].totalRevenue += split
@@ -391,4 +392,3 @@ def getPayeeTotalRevenue(_payee: uint256) -> uint256:
 @external
 def getLoanAvailability(_nft_address: address, _nft_id: uint256) -> bool:
     return self._loan_is_available(_nft_address, _nft_id)
-    

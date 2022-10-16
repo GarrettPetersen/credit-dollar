@@ -21,6 +21,8 @@ interface Issuer:
     def getPayeeNumBorrowers(_payee: address) -> uint256: view
     def getPayeeTotalRevenue(_payee: address) -> uint256: view
 
+issuer: Issuer
+
 # @dev Emits when ownership of any NFT changes by any mechanism. This event emits when NFTs are
 #      created (`from` == 0) and destroyed (`to` == 0). Exception: during contract creation, any
 #      number of NFTs may be created and assigned without emitting Transfer. At the time of any
@@ -59,6 +61,8 @@ event ApprovalForAll:
 MAX_NUM_PAYEES: constant(uint256) = 1000
 MINTING_COST: constant(uint256) = 1000000000000000000000 # 1000 CUSD
 cusd: ERC20
+founder: address
+issuer_set: bool
 
 # @dev Mapping from NFT ID to the address that owns it.
 idToOwner: HashMap[uint256, address]
@@ -81,13 +85,24 @@ SUPPORTED_INTERFACES: constant(bytes4[2]) = [
 ]
 
 @external
-def __init__(_cusd_address: address, _issuer_address: address):
+def __init__(_cusd_address: address):
     """
     @dev Contract constructor.
     """
+    self.founder = msg.sender
     self.cusd = ERC20(_cusd_address)
-    self.issuer = Issuer(_issuer_address)
+    self.issuer_set = False
 
+@external
+def setIssuer(_issuer_address: address):
+    """
+    @dev Set the issuer contract address.
+    """
+    assert msg.sender == self.founder
+    assert _issuer_address != empty(address)
+    assert not self.issuer_set
+    self.issuer_set = True
+    self.issuer = Issuer(_issuer_address)
 
 @pure
 @external
