@@ -3,6 +3,7 @@
 from vyper.interfaces import ERC165
 from vyper.interfaces import ERC721
 from vyper.interfaces import ERC721Metadata
+from vyper.interfaces import ERC20
 
 implements: ERC721
 implements: ERC165
@@ -53,6 +54,8 @@ event ApprovalForAll:
 
 
 MAX_NUM_PAYEES: constant(uint256) = 1000
+MINTING_COST: constant(uint256) = 1000000000000000000000 # 1000 CUSD
+cusd: ERC20
 
 # @dev Mapping from NFT ID to the address that owns it.
 idToOwner: HashMap[uint256, address]
@@ -80,12 +83,11 @@ SUPPORTED_INTERFACES: constant(bytes4[2]) = [
 ]
 
 @external
-def __init__():
+def __init__(_cusd_address: address):
     """
     @dev Contract constructor.
     """
-    self.minter = msg.sender
-    self.baseURL = "https://api.babby.xyz/metadata/"
+    self.cusd = ERC20(_cusd_address)
 
 
 @pure
@@ -337,16 +339,21 @@ def mint(_to: address, _tokenId: uint256) -> bool:
     @param _tokenId The token id to mint.
     @return A boolean that indicates if the operation was successful.
     """
-    assert _tokenId <= MAX_NUM_PAYEES
-    # Throws if `msg.sender` is not the minter
-    assert msg.sender == self.minter
+    assert _tokenId < MAX_NUM_PAYEES
     # Throws if `_to` is zero address
     assert _to != empty(address)
+    self.cusd.burnFrom(msg.sender, MINTING_COST) # minting fee: 1000 cUSD
     # Add NFT. Throws if `_tokenId` is owned by someone
     self._addTokenTo(_to, _tokenId)
     log Transfer(empty(address), _to, _tokenId)
     return True
 
+@external
+def approveCUSD(_amount: uint256):
+    """
+    Helper function to approve CUSD for minting
+    """
+    self.cusd.approve(self, _amount)
 
 @external
 def burn(_tokenId: uint256):
